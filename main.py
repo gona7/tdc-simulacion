@@ -138,10 +138,8 @@ def sidebar_controls() -> Dict:
     kp = st.sidebar.slider("Kp (proporcional)", 0.0, 5.0, 1.2, 0.1)
     kd = st.sidebar.slider("Kd (derivativo)", 0.0, 5.0, 0.6, 0.1)
     sp = st.sidebar.slider("Setpoint de GPU [%]", 30.0, 90.0, 60.0, 1.0)
-    max_delta_pods = st.sidebar.slider("Máx Δpods por paso", 0.2, 2.0, 1.0, 0.1)
-
     st.sidebar.subheader("Modelo y simulación")
-    dt = st.sidebar.slider("Paso de tiempo dt [s]", 2.0, 30.0, 10.0, 1.0)
+    dt = 30.0  # fijo en 30 s
     alpha = 0.25  # fijo, no editable
     initial_pods = 1  # fijo en 1
 
@@ -156,7 +154,6 @@ def sidebar_controls() -> Dict:
         "alpha": alpha,
         "initial_pods": int(initial_pods),
         "manual_load": float(manual_load),
-        "max_delta_pods": float(max_delta_pods),
     }
 
 
@@ -576,9 +573,9 @@ def main() -> None:
     gpu_ph = charts_left.container()
     pods_ph = charts_right.container()
 
-    # Controles de ejecución en vivo (intervalo fijo de 1 segundo)
+    # Controles de ejecución en vivo (intervalo fijo de 0.6 segundos)
     st.sidebar.subheader("Ejecución en vivo")
-    step_delay = 1.0
+    step_delay = 0.6
     col_run1, col_run2, col_run3 = st.sidebar.columns(3)
     start_stop = col_run1.button("Pausar" if sim["running"] else "Iniciar")
     step_once = col_run2.button("Paso +1")
