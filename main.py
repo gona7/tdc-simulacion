@@ -99,8 +99,8 @@ def set_modern_style() -> None:
         section[data-testid="stSidebar"] .stSelectbox label,
         section[data-testid="stSidebar"] .stNumberInput label {
             color: #f1e8e3;
-            font-size: 1.05rem;
-            font-weight: 600;
+            font-size: 1.4rem;
+            font-weight: 700;
         }
         section[data-testid="stSidebar"] .css-1aumxhk, /* slider label */
         section[data-testid="stSidebar"] .st-bx { color: #f1e8e3; }
@@ -110,7 +110,7 @@ def set_modern_style() -> None:
         section[data-testid="stSidebar"] .stSlider > div > div > div[data-baseweb="slider"] > div { background: rgba(255,255,255,0.2); }
         section[data-testid="stSidebar"] .stButton>button { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
         section[data-testid="stSidebar"] .stButton>button:hover { background: #a00029; border-color: #a00029; }
-        section[data-testid="stSidebar"] .block-container { padding: 1.2rem 1rem; overflow: visible !important; }
+        section[data-testid="stSidebar"] .block-container { padding: 0.8rem 0.9rem 1.2rem 0.9rem; overflow: visible !important; }
         section[data-testid="stSidebar"] > div:first-child { height: 100vh; overflow: hidden !important; }
         </style>
         """,
