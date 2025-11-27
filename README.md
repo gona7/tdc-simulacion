@@ -1,24 +1,47 @@
-# Simulación autoescalado kubernetes - TDC
+# Simulación autoescalado kubernetes - Teoría de Control
+
+![Logo UTN](./resources/utn%20cuadrado.jpg)
+
+## Profesor
+
+- Omar Civale
+
+## Integrantes
+
+Apellido, Nombre | Mail
+--|--
+Putrino, Rodrigo Nicolás | rputrino@frba.utn.edu.ar
+Rodriguez, Gonzalo Martin | gorodriguez@frba.utn.edu.ar
+
+
 
 ## Instrucciones de ejecución
 
-### 1. Clonar Repositorio
+### 1. Requisitos previos
+- Python 3.9+ instalado.
+- pip.
 
-En la terminal ejecutar el "clone":
-```sh
+### 2. Clonar el repositorio
+```bash
 git clone https://github.com/gona7/tdc-simulacion.git
+cd tdc-simulacion
 ```
 
-### 2. Instalar dependencias (en caso de que tengamos)
-
-Asumiendo que ya está instalado python y pip para isntalar dependencias:
-
-### 3. Setear variables de entrada
-Por Default están las mencionadas en el informe.
-
-### 4. Ejecutar simulador
-Una vez parado en la carpeta donde se encuentra nuestro archivo "main.py" ejecutar en la terminal el comando:
-
-```sh
-python main.py
+### 3. Crear y activar un entorno virtual (opcional pero recomendado)
+```bash
+python -m venv .venv
+source .venv/bin/activate   # En Windows: .venv\Scripts\activate
 ```
+
+### 4. Instalar dependencias
+```bash
+pip install --upgrade pip
+pip install streamlit plotly numpy pillow
+```
+
+### 5. Ejecutar la simulación
+Desde la carpeta del proyecto, se debe ejecutar:
+```bash
+streamlit run main.py
+```
+También se puede usar `python main.py`, que relanza la app con Streamlit.
