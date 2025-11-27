@@ -142,6 +142,7 @@ def init_state(params: Dict) -> None:
         "errors": [0.0],
         "controls": [0.0],
         "derivatives": [0.0],
+        "delta_controls": [0.0],
         "loads": [params["manual_load"]],
         "last_error": 0.0,
         "current_pods": params["initial_pods"],
@@ -162,38 +163,68 @@ def ensure_state(params: Dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Umbrales de control (delta de pods según magnitud del error)
+# ---------------------------------------------------------------------------
+
+
+def threshold_delta(value: float) -> int:
+    """
+    Devuelve un delta entero de pods según la magnitud del control (variable continua).
+    Umbrales inspirados en el ejemplo aportado: pequeños valores no cambian pods,
+    valores medios suman/restan 1, valores grandes (cerca del máximo) suman/restan 2.
+    """
+    abs_val = abs(value)
+    if abs_val < 0.2:
+        return 0
+    elif abs_val < 0.8:
+        return 1 if value > 0 else -1
+    else:
+        return 2 if value > 0 else -2
+
+
+# ---------------------------------------------------------------------------
 # Dinámica del proceso y control (todo en funciones)
 # ---------------------------------------------------------------------------
 
 
-def pd_step(measurement: float, load: float, params: Dict, sim_state: Dict) -> Dict[str, float]:
-    """Calcula la acción PD y la nueva cantidad de pods, con histeresis por %GPU y carga mínima necesaria."""
+def pd_step(uso_gpu_actual: float, load: float, params: Dict, sim_state: Dict) -> Dict[str, float]:
+    """Calcula la acción PD y ajusta pods solo cuando el %GPU cae en bandas de error."""
     sp = params["sp"]
     band_low_max = max(sp - 15, 0)
+    band_low_min = max(sp - 25, 0)
     band_high_min = min(sp + 15, 100)
+    band_high_max = min(sp + 25, 100)
 
-    # Control PD clásico
-    error = measurement - sp
+    # Control PD clásico (solo para observabilidad; no mueve pods fuera de bandas)
+    error = uso_gpu_actual - sp
     derivative = (error - sim_state["last_error"]) / params["dt"]
     control = params["kp"] * error + params["kd"] * derivative
     control = float(np.clip(control, -params["max_delta_pods"], params["max_delta_pods"]))
 
-    n_raw = sim_state["current_pods"] + control
-    pods = int(np.clip(np.round(n_raw), 1, 4))
+    pods = sim_state["current_pods"]
+    target_pods = int(np.clip(np.ceil(load / LOAD_AT_SP_PER_POD), 1, 4))
+    delta_from_control = threshold_delta(control)
 
-    # Mínimo basado en carga: cantidad de pods para dejar cada uno en ~60 %.
-    min_required = int(np.clip(np.ceil(load / LOAD_AT_SP_PER_POD), 1, 4))
-    pods = max(pods, min_required)
-
-    # Histeresis basada en bandas de %GPU:
-    if measurement >= band_high_min and pods < 4:
-        pods = min(pods + 1, 4)
-    elif measurement <= band_low_max and pods > min_required:
-        pods = max(pods - 1, min_required)
+    # Ajuste únicamente si el %GPU está dentro de las bandas de error, usando la variable control.
+    if band_high_min <= uso_gpu_actual <= band_high_max and control > 0:
+        pods = max(pods, target_pods)
+        if delta_from_control != 0:
+            pods = min(pods + delta_from_control, 4)
+    elif band_low_min <= uso_gpu_actual <= band_low_max and control < 0:
+        pods = max(pods, target_pods)
+        if delta_from_control != 0:
+            pods = max(target_pods, pods + delta_from_control, 1)
 
     sim_state["last_error"] = error
     sim_state["current_pods"] = pods
-    return {"pods": pods, "error": error, "control": control, "derivative": derivative}
+    # control se devuelve solo como referencia/observabilidad en la UI.
+    return {
+        "pods": pods,
+        "error": error,
+        "control": control,
+        "derivative": derivative,
+        "delta_from_control": delta_from_control,
+    }
 
 
 def plant_step(load: float, pods: int, gpu_prev: float, params: Dict) -> Dict[str, float]:
@@ -218,6 +249,7 @@ def advance_simulation(params: Dict, load_value: float, steps: int = 1) -> None:
         sim["errors"].append(control_out["error"])
         sim["controls"].append(control_out["control"])
         sim["derivatives"].append(control_out["derivative"])
+        sim["delta_controls"].append(control_out["delta_from_control"])
         sim["loads"].append(load_value)
 
 
@@ -408,6 +440,19 @@ def render_pod_kpis(sim: Dict) -> None:
         )
 
 
+def render_control_kpis(sim: Dict) -> None:
+    """Muestra valores instantáneos del lazo: error, derivativo, control y delta aplicado."""
+    err = sim["errors"][-1]
+    deriv = sim["derivatives"][-1]
+    control = sim["controls"][-1]
+    delta = sim["delta_controls"][-1]
+    cols = st.columns(4)
+    cols[0].metric("Error [%GPU]", f"{err:.2f}")
+    cols[1].metric("Derivativo", f"{deriv:.2f}")
+    cols[2].metric("Control (PD)", f"{control:.2f}")
+    cols[3].metric("Delta pods", f"{delta:+.0f}")
+
+
 # ---------------------------------------------------------------------------
 # Bucle principal de la app
 # ---------------------------------------------------------------------------
@@ -424,6 +469,7 @@ def main() -> None:
     # Layout compacto en dos filas: KPIs arriba, gráficos debajo.
     top_left, top_right = st.columns([0.55, 0.45])
     pod_kpi_ph = top_left.container()
+    ctrl_kpi_ph = top_left.container()
     metrics_ph = top_right.container()
     charts_left, charts_right = st.columns(2)
     gpu_ph = charts_left.container()
@@ -441,6 +487,8 @@ def main() -> None:
     def render_all() -> None:
         with pod_kpi_ph:
             render_pod_kpis(sim)
+        with ctrl_kpi_ph:
+            render_control_kpis(sim)
         with metrics_ph:
             render_metrics(sim, params["sp"])
         with gpu_ph:
