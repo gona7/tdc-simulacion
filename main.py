@@ -12,10 +12,13 @@ en vivo y ver los gráficos actualizarse en tiempo real.
 """
 
 import time
+import base64
+from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
 import streamlit as st
+from PIL import Image
 
 # Algunos entornos con Python 3.13 tienen problemas con pandas; creamos un stub mínimo
 # antes de importar Plotly para evitar errores de importación circular.
@@ -49,6 +52,7 @@ import plotly.graph_objects as go
 CAPACITY_PER_POD = 1000.0 / 0.6
 # Carga que corresponde al 60 % de GPU por pod (valor de referencia)
 LOAD_AT_SP_PER_POD = 1000.0
+LOGO_PATH = Path("resources/utn cuadrado.jpg")
 
 
 # ---------------------------------------------------------------------------
@@ -58,28 +62,69 @@ LOAD_AT_SP_PER_POD = 1000.0
 
 def set_modern_style() -> None:
     """Inyecta estilo para una UI moderna, oscura y contrastada."""
+    logo_icon = Image.open(LOGO_PATH) if LOGO_PATH.exists() else "🚀"
     st.set_page_config(
         page_title="Simulación PD - Autoescalado GPU",
-        page_icon="🚀",
+        page_icon=logo_icon,
         layout="wide",
         initial_sidebar_state="expanded",
     )
     st.markdown(
         """
         <style>
-        body { background: radial-gradient(circle at 20% 20%, #0f172a 0, #0b1220 25%, #080d19 60%, #060a12 100%); color: #e2e8f0; }
-        .block-container { padding-top: 0.6rem; padding-bottom: 0.6rem; }
-        .stMetric { background: rgba(255,255,255,0.04); border-radius: 12px; padding: 8px; }
-        .stPlotlyChart { padding: 0; }
+        :root {
+            --bg1: #f5eee7;   /* crema */
+            --bg2: #e8ddd5;   /* crema suave */
+            --fg: #1b0f0a;    /* negro cálido */
+            --accent: #c30032;/* rojo UTN */
+            --muted: #8b6a60; /* marrón suave */
+            --panel: #0e0c0c; /* panel negro */
+            --panel-border: #2b2b2b;
+        }
+        body { background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: var(--fg); }
+        .block-container { padding-top: 0.6rem; padding-bottom: 0.3rem; }
+        .stMetric { background: rgba(0,0,0,0.04); border-radius: 12px; padding: 8px; border: 1px solid rgba(0,0,0,0.06); color: var(--fg); }
+        .stPlotlyChart { padding: 0; background: var(--panel); border-radius: 12px; }
         .element-container { margin-bottom: 0.5rem; }
-        .badge { padding: 6px 12px; border-radius: 999px; font-weight: 600; display: inline-block; }
-        .badge-green { background: #22c55e1a; color: #22c55e; border: 1px solid #22c55e55; }
-        .badge-amber { background: #f59e0b1a; color: #fbbf24; border: 1px solid #f59e0b55; }
-        .badge-red { background: #ef44441a; color: #f87171; border: 1px solid #ef444455; }
+        h1, h2, h3, h4, h5, h6 { color: var(--fg); }
+        .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 0.4rem; }
+        .header-left { display: flex; flex-direction: column; }
+        .logo-title { font-weight: 800; letter-spacing: 0.04em; color: var(--accent); font-size: 3.2rem; line-height: 1.2; text-align: left; margin-top: 24px; }
+        .logo-sub { color: #8b6a60; font-size: 1rem; }
+        .logo-img { height: 140px; margin-right: 64px; margin-top: 12px; }
+        /* Sidebar en negro */
+        section[data-testid="stSidebar"] { background: var(--panel); color: #f1e8e3; overflow: hidden !important; }
+        section[data-testid="stSidebar"] .stSlider label, 
+        section[data-testid="stSidebar"] .stRadio label,
+        section[data-testid="stSidebar"] .stSelectbox label,
+        section[data-testid="stSidebar"] .stNumberInput label {
+            color: #f1e8e3;
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+        section[data-testid="stSidebar"] .css-1aumxhk, /* slider label */
+        section[data-testid="stSidebar"] .st-bx { color: #f1e8e3; }
+        section[data-testid="stSidebar"] .st-c8 { color: #f1e8e3; }
+        section[data-testid="stSidebar"] .stSlider > div > div > div { background: rgba(255,255,255,0.1); }
+        section[data-testid="stSidebar"] .stSlider > div > div > div span { background: var(--accent); }
+        section[data-testid="stSidebar"] .stSlider > div > div > div[data-baseweb="slider"] > div { background: rgba(255,255,255,0.2); }
+        section[data-testid="stSidebar"] .stButton>button { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+        section[data-testid="stSidebar"] .stButton>button:hover { background: #a00029; border-color: #a00029; }
+        section[data-testid="stSidebar"] .block-container { padding: 1.2rem 1rem; overflow: visible !important; }
+        section[data-testid="stSidebar"] > div:first-child { height: 100vh; overflow: hidden !important; }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+
+def logo_base64() -> str:
+    """Codifica el logo de /resources en base64 para usar inline."""
+    try:
+        with open(LOGO_PATH, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------------------
@@ -97,22 +142,11 @@ def sidebar_controls() -> Dict:
 
     st.sidebar.subheader("Modelo y simulación")
     dt = st.sidebar.slider("Paso de tiempo dt [s]", 2.0, 30.0, 10.0, 1.0)
-    alpha = st.sidebar.slider("Constante dinámica α", 0.05, 1.0, 0.3, 0.05)
-    initial_pods = st.sidebar.select_slider("Pods iniciales", [1, 2, 3, 4], value=1)
+    alpha = 0.25  # fijo, no editable
+    initial_pods = 1  # fijo en 1
 
     st.sidebar.subheader("Carga en vivo")
     manual_load = st.sidebar.slider("Carga actual [requests/min]", 0, 10000, 400, 10)
-    quick = st.sidebar.radio(
-        "Atajos de carga",
-        ["Manual", "Baja (150)", "Media (700)", "Alta (1400)", "Pico (1700)"],
-        horizontal=False,
-        index=0,
-    )
-    if quick != "Manual":
-        manual_load = {"Baja (150)": 150, "Media (700)": 700, "Alta (1400)": 1400, "Pico (1700)": 1700}[quick]
-
-    st.sidebar.subheader("Visualización")
-    show_load = st.sidebar.checkbox("Mostrar gráfica de carga", value=False)
 
     return {
         "kp": kp,
@@ -122,7 +156,6 @@ def sidebar_controls() -> Dict:
         "alpha": alpha,
         "initial_pods": int(initial_pods),
         "manual_load": float(manual_load),
-        "show_load": show_load,
         "max_delta_pods": float(max_delta_pods),
     }
 
@@ -138,14 +171,14 @@ def init_state(params: Dict) -> None:
         "time_min": [0.0],
         "gpu": [0.0],
         "gpu_static": [0.0],
-        "pods": [params["initial_pods"]],
+        "pods": [1],
         "errors": [0.0],
         "controls": [0.0],
         "derivatives": [0.0],
         "delta_controls": [0.0],
         "loads": [params["manual_load"]],
         "last_error": 0.0,
-        "current_pods": params["initial_pods"],
+        "current_pods": 1,
         "running": False,
     }
 
@@ -188,36 +221,39 @@ def threshold_delta(value: float) -> int:
 
 
 def pd_step(uso_gpu_actual: float, load: float, params: Dict, sim_state: Dict) -> Dict[str, float]:
-    """Calcula la acción PD y ajusta pods solo cuando el %GPU cae en bandas de error."""
+    """
+    Control PD con acción solo dentro de las bandas de error:
+    - control = Kp*error + Kd*deriv
+    - convierte control a delta entero (threshold)
+    - si %GPU entra en banda alta/baja, aplica delta; fuera de banda mantiene pods salvo mínimo por carga
+    """
     sp = params["sp"]
-    band_low_max = max(sp - 15, 0)
     band_low_min = max(sp - 25, 0)
+    band_low_max = max(sp - 15, 0)
     band_high_min = min(sp + 15, 100)
     band_high_max = min(sp + 25, 100)
 
-    # Control PD clásico (solo para observabilidad; no mueve pods fuera de bandas)
-    error = uso_gpu_actual - sp
+    error = uso_gpu_actual - sp  # si GPU > SP, el control tiende a agregar pods
     derivative = (error - sim_state["last_error"]) / params["dt"]
     control = params["kp"] * error + params["kd"] * derivative
-    control = float(np.clip(control, -params["max_delta_pods"], params["max_delta_pods"]))
 
-    pods = sim_state["current_pods"]
-    target_pods = int(np.clip(np.ceil(load / LOAD_AT_SP_PER_POD), 1, 4))
-    delta_from_control = threshold_delta(control)
+    pods_prev = sim_state["current_pods"]
+    pods = pods_prev
+    delta_from_control = 0
+    delta = threshold_delta(control)
 
-    # Ajuste únicamente si el %GPU está dentro de las bandas de error, usando la variable control.
+    # Solo actuamos si estamos dentro de las bandas de error superiores/inferiores.
     if band_high_min <= uso_gpu_actual <= band_high_max and control > 0:
-        pods = max(pods, target_pods)
-        if delta_from_control != 0:
-            pods = min(pods + delta_from_control, 4)
+        pods = int(np.clip(pods_prev + delta, 1, 4))
+        delta_from_control = pods - pods_prev
     elif band_low_min <= uso_gpu_actual <= band_low_max and control < 0:
-        pods = max(pods, target_pods)
-        if delta_from_control != 0:
-            pods = max(target_pods, pods + delta_from_control, 1)
+        pods = int(np.clip(pods_prev + delta, 1, 4))
+        delta_from_control = pods - pods_prev
+    else:
+        delta_from_control = 0
 
     sim_state["last_error"] = error
     sim_state["current_pods"] = pods
-    # control se devuelve solo como referencia/observabilidad en la UI.
     return {
         "pods": pods,
         "error": error,
@@ -273,7 +309,6 @@ def compute_kpis(sim: Dict, sp: float) -> Dict[str, float]:
         "gpu_final": gpu_arr[-1],
         "pods_current": pods_arr[-1],
         "pods_max": pods_arr.max(),
-        "pods_avg": pods_arr.mean(),
         "pct_within_band": pct_within,
         "pods_min_allowed": 1,
         "pods_max_allowed": 4,
@@ -404,21 +439,31 @@ def plot_load(sim: Dict) -> go.Figure:
 
 
 def render_header() -> None:
-    st.title("Autoescalado de pods GPU")
-    st.caption(
-        "Microservicio de validación de imágenes sobre GPU. "
-        "El sistema de control regula la cantidad de pods para mantener ~60 % de uso de GPU."
+    encoded = logo_base64()
+    img_tag = (
+        f'<img src="data:image/jpeg;base64,{encoded}" alt="UTN.BA" class="logo-img">'
+        if encoded
+        else ""
     )
-    st.markdown("&nbsp;")
+    st.markdown(
+        f"""
+        <div class="header-row">
+            <div class="header-left">
+                <div class="logo-title">Autoescalado de pods GPU</div>
+            </div>
+            {img_tag}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_metrics(sim: Dict, sp: float) -> None:
     kpis = compute_kpis(sim, sp)
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     col1.metric("GPU final [%]", f"{kpis['gpu_final']:.1f}")
     col2.metric("Pods actuales", f"{kpis['pods_current']:.0f}")
-    col3.metric("Pods promedio", f"{kpis['pods_avg']:.2f}")
-    col4.metric("Pods permitidos", f"{kpis['pods_min_allowed']} - {kpis['pods_max_allowed']}")
+    col3.metric("Pods permitidos", f"{kpis['pods_min_allowed']} - {kpis['pods_max_allowed']}")
     # Se omite el mensaje de banda para evitar textos de alerta.
 
 
@@ -446,11 +491,10 @@ def render_control_kpis(sim: Dict) -> None:
     deriv = sim["derivatives"][-1]
     control = sim["controls"][-1]
     delta = sim["delta_controls"][-1]
-    cols = st.columns(4)
+    cols = st.columns(3)
     cols[0].metric("Error [%GPU]", f"{err:.2f}")
     cols[1].metric("Derivativo", f"{deriv:.2f}")
     cols[2].metric("Control (PD)", f"{control:.2f}")
-    cols[3].metric("Delta pods", f"{delta:+.0f}")
 
 
 # ---------------------------------------------------------------------------
@@ -474,11 +518,10 @@ def main() -> None:
     charts_left, charts_right = st.columns(2)
     gpu_ph = charts_left.container()
     pods_ph = charts_right.container()
-    load_ph = st.container()
 
-    # Controles de ejecución con animación suave
+    # Controles de ejecución en vivo (intervalo fijo de 1 segundo)
     st.sidebar.subheader("Ejecución en vivo")
-    step_delay = st.sidebar.slider("Intervalo entre pasos (s)", 0.05, 2.0, 0.4, 0.05)
+    step_delay = 1.0
     col_run1, col_run2, col_run3 = st.sidebar.columns(3)
     start_stop = col_run1.button("Pausar" if sim["running"] else "Iniciar")
     step_once = col_run2.button("Paso +1")
@@ -495,11 +538,6 @@ def main() -> None:
             st.plotly_chart(plot_gpu(sim, params["sp"]), use_container_width=True, key="gpu_chart")
         with pods_ph:
             st.plotly_chart(plot_pods(sim), use_container_width=True, key="pods_chart")
-        if params["show_load"]:
-            with load_ph:
-                st.plotly_chart(plot_load(sim), use_container_width=True, key="load_chart")
-        else:
-            load_ph.empty()
 
     if reset:
         reset_simulation(params)
@@ -524,11 +562,6 @@ def main() -> None:
     if sim["running"]:
         time.sleep(step_delay)
         st.rerun()
-
-    st.markdown(
-        "Con **Iniciar/Pausar** la simulación corre en continuo; con **Paso +1** avanzás discretamente. "
-        "Ajustá la carga en vivo para ver cuándo escala a más pods."
-    )
 
 
 if __name__ == "__main__":
