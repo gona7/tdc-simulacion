@@ -146,7 +146,7 @@ def sidebar_controls() -> Dict:
     initial_pods = 1  # fijo en 1
 
     st.sidebar.subheader("Carga en vivo")
-    manual_load = st.sidebar.slider("Carga actual [requests/min]", 0, 10000, 400, 10)
+    manual_load = st.sidebar.slider("Carga actual [requests/min]", 0, 10000, 1000, 10)
 
     return {
         "kp": kp,
@@ -193,6 +193,23 @@ def ensure_state(params: Dict) -> None:
     """Crea el estado inicial si aún no existe."""
     if "sim" not in st.session_state:
         init_state(params)
+
+
+def find_settling_index(time_arr: np.ndarray, gpu_arr: np.ndarray, sp: float) -> int | None:
+    """
+    Detecta de forma simple el fin del transitorio: primer instante donde
+    el error se mantiene dentro de ±2 % y la variación es pequeña por una ventana.
+    """
+    tol = 2.0
+    window = 5  # muestras consecutivas
+    slope_thresh = 0.5
+    for i in range(len(gpu_arr) - window):
+        segment = gpu_arr[i : i + window]
+        if np.all(np.abs(segment - sp) <= tol):
+            # variación pequeña dentro de la ventana
+            if np.max(np.abs(np.diff(segment))) <= slope_thresh:
+                return i
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -341,6 +358,7 @@ def plot_gpu(sim: Dict, sp: float) -> go.Figure:
     band_low_max = max(sp - 15, 0)
     band_high_min = min(sp + 15, 100)
     band_high_max = min(sp + 25, 100)
+    settle_idx = find_settling_index(np.array(sim["time_min"]), np.array(sim["gpu"]), sp)
 
     fig = go.Figure()
     # Banda inferior (relleno)
@@ -407,6 +425,15 @@ def plot_gpu(sim: Dict, sp: float) -> go.Figure:
             line=dict(color="#f97316", width=2, dash="dash"),
         )
     )
+    if settle_idx is not None:
+        t_settle = sim["time_min"][settle_idx]
+        fig.add_vline(
+            x=t_settle,
+            line=dict(color="#c30032", width=2, dash="dot"),
+            annotation_text="Fin transitorio",
+            annotation_position="top right",
+            annotation_font_color="#c30032",
+        )
     fig.update_layout(
         title="% de uso de GPU vs tiempo",
         xaxis_title="Tiempo [min]",
