@@ -84,7 +84,7 @@ def set_modern_style() -> None:
         body { background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: var(--fg); }
         .block-container { padding-top: 0.6rem; padding-bottom: 0.3rem; }
         .stMetric { background: rgba(0,0,0,0.04); border-radius: 12px; padding: 8px; border: 1px solid rgba(0,0,0,0.06); color: var(--fg); }
-        .stPlotlyChart { padding: 0; background: var(--panel); border-radius: 12px; }
+        .stPlotlyChart { padding: 0; background: #ffffff; border-radius: 12px; }
         .element-container { margin-bottom: 0.5rem; }
         h1, h2, h3, h4, h5, h6 { color: var(--fg); }
         .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 0.4rem; }
@@ -341,7 +341,7 @@ def plot_gpu(sim: Dict, sp: float) -> go.Figure:
             fill="tonexty",
             fillcolor="rgba(74, 222, 128, 0.15)",
             line=dict(color="rgba(74, 222, 128, 0.0)"),
-            name="Banda aceptable (baja)",
+            name="Banda de error (baja)",
             hoverinfo="skip",
         )
     )
@@ -364,7 +364,7 @@ def plot_gpu(sim: Dict, sp: float) -> go.Figure:
             fill="tonexty",
             fillcolor="rgba(249, 115, 22, 0.15)",
             line=dict(color="rgba(249, 115, 22, 0.0)"),
-            name="Banda aceptable (alta)",
+            name="Banda de error (alta)",
             hoverinfo="skip",
         )
     )
@@ -390,10 +390,13 @@ def plot_gpu(sim: Dict, sp: float) -> go.Figure:
         title="% de uso de GPU vs tiempo",
         xaxis_title="Tiempo [min]",
         yaxis_title="% de uso de GPU",
-        template="plotly_dark",
+        template=None,
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         uirevision="gpu-figure",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        transition=dict(duration=400, easing="cubic-in-out"),
     )
     fig.update_yaxes(range=[0, 110])
     return fig
@@ -409,10 +412,13 @@ def plot_pods(sim: Dict) -> go.Figure:
     fig.update_traces(line=dict(color="#a78bfa", width=3), name="Pods")
     fig.update_layout(
         title="Evolución de pods GPU",
-        template="plotly_dark",
+        template=None,
         yaxis=dict(dtick=1, range=[0.8, 4.2]),
         hovermode="x unified",
         uirevision="pods-figure",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        transition=dict(duration=400, easing="cubic-in-out"),
     )
     return fig
 
@@ -426,9 +432,12 @@ def plot_load(sim: Dict) -> go.Figure:
     fig.update_traces(line=dict(color="#34d399"), fillcolor="rgba(52,211,153,0.25)", name="Carga")
     fig.update_layout(
         title="Perfil de carga en tiempo real",
-        template="plotly_dark",
+        template=None,
         hovermode="x unified",
         uirevision="load-figure",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        transition=dict(duration=400, easing="cubic-in-out"),
     )
     return fig
 
@@ -535,9 +544,19 @@ def main() -> None:
         with metrics_ph:
             render_metrics(sim, params["sp"])
         with gpu_ph:
-            st.plotly_chart(plot_gpu(sim, params["sp"]), use_container_width=True, key="gpu_chart")
+            st.plotly_chart(
+                plot_gpu(sim, params["sp"]),
+                use_container_width=True,
+                key="gpu_chart",
+                config={"displayModeBar": False, "staticPlot": False},
+            )
         with pods_ph:
-            st.plotly_chart(plot_pods(sim), use_container_width=True, key="pods_chart")
+            st.plotly_chart(
+                plot_pods(sim),
+                use_container_width=True,
+                key="pods_chart",
+                config={"displayModeBar": False, "staticPlot": False},
+            )
 
     if reset:
         reset_simulation(params)
