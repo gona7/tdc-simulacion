@@ -82,16 +82,16 @@ def set_modern_style() -> None:
             --panel-border: #2b2b2b;
         }
         body { background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: var(--fg); }
-        .block-container { padding-top: 0.6rem; padding-bottom: 0.3rem; }
-        .stMetric { background: rgba(0,0,0,0.04); border-radius: 12px; padding: 8px; border: 1px solid rgba(0,0,0,0.06); color: var(--fg); }
-        .stPlotlyChart { padding: 0; background: #ffffff; border-radius: 12px; }
-        .element-container { margin-bottom: 0.5rem; }
+        .block-container { padding-top: 1.2rem; padding-bottom: 0.2rem; }
+        .stMetric { background: rgba(0,0,0,0.04); border-radius: 10px; padding: 6px; border: 1px solid rgba(0,0,0,0.05); color: var(--fg); }
+        .stPlotlyChart { padding: 0; background: #ffffff; border-radius: 10px; }
+        .element-container { margin-bottom: 0.35rem; }
         h1, h2, h3, h4, h5, h6 { color: var(--fg); }
-        .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 0.4rem; }
+        .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 0.2rem; }
         .header-left { display: flex; flex-direction: column; }
-        .logo-title { font-weight: 800; letter-spacing: 0.04em; color: var(--accent); font-size: 3.2rem; line-height: 1.2; text-align: left; margin-top: 24px; }
+        .logo-title { font-weight: 800; letter-spacing: 0.04em; color: var(--accent); font-size: 2.8rem; line-height: 1.1; text-align: left; margin-top: 12px; margin-bottom: 2px; }
         .logo-sub { color: #8b6a60; font-size: 1rem; }
-        .logo-img { height: 140px; margin-right: 64px; margin-top: 12px; }
+        .logo-img { height: 110px; margin-right: 24px; margin-top: 6px; }
         /* Sidebar en negro */
         section[data-testid="stSidebar"] { background: var(--panel); color: #f1e8e3; overflow: hidden !important; }
         section[data-testid="stSidebar"] .stSlider label, 
@@ -545,10 +545,55 @@ def render_control_kpis(sim: Dict) -> None:
     deriv = sim["derivatives"][-1]
     control = sim["controls"][-1]
     delta = sim["delta_controls"][-1]
-    cols = st.columns(3)
-    cols[0].metric("Error [%GPU]", f"{err:.2f}")
-    cols[1].metric("Derivativo", f"{deriv:.2f}")
-    cols[2].metric("Control (PD)", f"{control:.2f}")
+    # cols = st.columns(3)
+    # cols[0].metric("Error [%GPU]", f"{err:.2f}")
+    # cols[1].metric("Derivativo", f"{deriv:.2f}")
+    # cols[2].metric("Control (PD)", f"{control:.2f}")
+
+
+def plot_error(sim: Dict) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=sim["time_min"],
+            y=sim["errors"],
+            mode="lines+markers",
+            name="Error",
+            line=dict(color="#c30032", width=2),
+            marker=dict(size=4),
+        )
+    )
+    fig.update_layout(
+        title="Evolución del error (SP - %GPU)",
+        xaxis_title="Tiempo [min]",
+        yaxis_title="Error [%GPU]",
+        template=None,
+        hovermode="x unified",
+        uirevision="error-figure",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        height=220,
+    )
+    return fig
+
+
+def plot_load(sim: Dict) -> go.Figure:
+    fig = px.line(
+        x=sim["time_min"],
+        y=sim["loads"],
+        labels={"x": "Tiempo [min]", "y": "Requests/min"},
+    )
+    fig.update_traces(line=dict(color="#34d399", width=2), name="Carga rpm")
+    fig.update_layout(
+        title="Evolución de la carga (rpm)",
+        template=None,
+        hovermode="x unified",
+        uirevision="load-figure",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        height=220,
+    )
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -564,14 +609,14 @@ def main() -> None:
 
     sim = st.session_state.sim
 
-    # Layout compacto en dos filas: KPIs arriba, gráficos debajo.
-    top_left, top_right = st.columns([0.55, 0.45])
+    # Layout compacto en tres filas: KPIs arriba, gráficos en medio, cargas/errores abajo.
+    top_left, top_right = st.columns([0.6, 0.4])
     pod_kpi_ph = top_left.container()
-    ctrl_kpi_ph = top_left.container()
     metrics_ph = top_right.container()
     charts_left, charts_right = st.columns(2)
     gpu_ph = charts_left.container()
     pods_ph = charts_right.container()
+    bottom_left, bottom_right = st.columns([0.5, 0.5])
 
     # Controles de ejecución en vivo (intervalo fijo de 0.6 segundos)
     st.sidebar.subheader("Ejecución en vivo")
@@ -584,8 +629,6 @@ def main() -> None:
     def render_all() -> None:
         with pod_kpi_ph:
             render_pod_kpis(sim)
-        with ctrl_kpi_ph:
-            render_control_kpis(sim)
         with metrics_ph:
             render_metrics(sim, params["sp"])
         with gpu_ph:
@@ -602,6 +645,21 @@ def main() -> None:
                 key="pods_chart",
                 config={"displayModeBar": False, "staticPlot": False},
             )
+        with bottom_left:
+            st.plotly_chart(
+                plot_load(sim),
+                use_container_width=True,
+                key="load_chart",
+                config={"displayModeBar": False, "staticPlot": False},
+            )
+        with bottom_right:
+            st.plotly_chart(
+                plot_error(sim),
+                use_container_width=True,
+                key="error_chart",
+                config={"displayModeBar": False, "staticPlot": False},
+            )
+            render_control_kpis(sim)
 
     if reset:
         reset_simulation(params)
