@@ -136,8 +136,8 @@ def logo_base64() -> str:
 def sidebar_controls() -> Dict:
     """Dibuja los controles y devuelve sus valores."""
     st.sidebar.subheader("Controlador PD")
-    kp = st.sidebar.slider("Kp (proporcional)", 0.0, 5.0, 1.2, 0.1)
-    kd = st.sidebar.slider("Kd (derivativo)", 0.0, 5.0, 0.6, 0.1)
+    kp = st.sidebar.slider("Kp (proporcional)", 0.0, 3.0, 1.0, 0.1)
+    kd = st.sidebar.slider("Kd (derivativo)", 0.0, 1.0, 0.0, 0.01)
     sp = st.sidebar.slider("Setpoint de GPU [%]", 30.0, 90.0, 60.0, 1.0)
     st.sidebar.subheader("Modelo y simulación")
     dt = 30.0  # fijo en 30 s
@@ -225,11 +225,11 @@ def umbrales(error):
     if st.session_state.INITIAL == 1: 
         st.session_state.INITIAL = 0
         return 0 
-    if abs_error < 15:             # 0.5V = 10% CPU
+    if abs_error < 15:             # 15% GPU
         return 0
-    elif 15 <= abs_error < 20:     # 1V = 20% CPU
+    elif 15 <= abs_error < 20:     # 15 - 20% GPU
         return -1 if error < 0 else 1
-    elif 20 <= abs_error < 25:     # 1.25V = 25% CPU
+    elif 20 <= abs_error < 25:     # 10 - 25% GPU
         return -2 if error < 0 else 2
     else:
         return -3 if error < 0 else 3
