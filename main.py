@@ -26,6 +26,7 @@ import sys
 import types
 
 
+INITIAL = 1
 def _ensure_pandas_stub():
     try:
         import pandas as pd  # type: ignore
@@ -135,8 +136,8 @@ def logo_base64() -> str:
 def sidebar_controls() -> Dict:
     """Dibuja los controles y devuelve sus valores."""
     st.sidebar.subheader("Controlador PD")
-    kp = st.sidebar.slider("Kp (proporcional)", 0.0, 5.0, 1.2, 0.1)
-    kd = st.sidebar.slider("Kd (derivativo)", 0.0, 5.0, 0.6, 0.1)
+    kp = st.sidebar.slider("Kp (proporcional)", 0.0, 3.0, 1.0, 0.1)
+    kd = st.sidebar.slider("Kd (derivativo)", 0.0, 1.0, 0.0, 0.01)
     sp = st.sidebar.slider("Setpoint de GPU [%]", 30.0, 90.0, 60.0, 1.0)
     st.sidebar.subheader("Modelo y simulación")
     dt = 30.0  # fijo en 30 s
@@ -213,7 +214,26 @@ def find_settling_index(time_arr: np.ndarray, gpu_arr: np.ndarray, sp: float) ->
 # Umbrales de control (delta de pods según magnitud del error)
 # ---------------------------------------------------------------------------
 
+if "INITIAL" not in st.session_state:
+    st.session_state.INITIAL = 1
 
+
+def umbrales(error):
+    abs_error = abs(error)
+    print("ABS ERROR: ",abs_error)
+    print("initial: ",st.session_state.INITIAL)
+    if st.session_state.INITIAL == 1: 
+        st.session_state.INITIAL = 0
+        return 0 
+    if abs_error < 15:             # 15% GPU
+        return 0
+    elif 15 <= abs_error < 20:     # 15 - 20% GPU
+        return -1 if error < 0 else 1
+    elif 20 <= abs_error < 25:     # 10 - 25% GPU
+        return -2 if error < 0 else 2
+    else:
+        return -3 if error < 0 else 3
+        
 def threshold_delta(value: float) -> int:
     """
     Devuelve un delta entero de pods según la magnitud del control (variable continua).
@@ -258,16 +278,26 @@ def pd_step(uso_gpu_actual: float, load: float, params: Dict, sim_state: Dict) -
     band_low_max = max(sp - 15, 0)
     band_high_min = min(sp + 15, 100)
     band_high_max = min(sp + 25, 100)
-
+    print("GPU ACT ES: ",uso_gpu_actual)
+    print("setpoint es: ",sp)
     error = uso_gpu_actual - sp  # si GPU > SP, el control tiende a agregar pods
+    print("ERROR ES: ",error)
     derivative = (error - sim_state["last_error"]) / params["dt"]
-    control = params["kp"] * error + params["kd"] * derivative
+    umbral_error = umbrales(error)
+    control = params["kp"] * umbral_error + params["kd"] * derivative
+    print("KP ES: ", params["kp"])
+    print("umbral es: ", umbral_error)
+    print("EL CONTROL ES: ",control)
 
     pods_prev = sim_state["current_pods"]
-    pods = pods_prev
+    new_pods = np.ceil(pods_prev+control)
+    limited_new_pods = max(1, min(4, new_pods))
+    """ pods = pods_prev
     delta_from_control = 0
     target_pods = int(np.clip(np.ceil(load / LOAD_AT_SP_PER_POD), 1, 4))
+    
     delta = threshold_delta(control) + threshold_delta_derivative(derivative)
+    
     delta = int(np.clip(delta, -3, 3))  # permite saltos hasta ±3 pods
     delta_abs = abs(delta)
 
@@ -285,12 +315,12 @@ def pd_step(uso_gpu_actual: float, load: float, params: Dict, sim_state: Dict) -
         pods = int(np.clip(pods_prev - dec, 1, 4))
         delta_from_control = pods - pods_prev
     else:
-        delta_from_control = 0
-
+        delta_from_control = 0 """
+    delta_from_control = abs(limited_new_pods-pods_prev)
     sim_state["last_error"] = error
-    sim_state["current_pods"] = pods
+    sim_state["current_pods"] = limited_new_pods
     return {
-        "pods": pods,
+        "pods": limited_new_pods,
         "error": error,
         "control": control,
         "derivative": derivative,
