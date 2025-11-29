@@ -1,16 +1,3 @@
-"""
-Simulación didáctica en tiempo discreto de un lazo PD para autoescalado de pods GPU.
-
-Se ejecuta con:
-    streamlit run main.py
-o simplemente:
-    python main.py
-
-El código está escrito únicamente con funciones (sin clases) y mantiene el estado en
-`st.session_state` para poder correr la simulación de manera continua, ajustar la carga
-en vivo y ver los gráficos actualizarse en tiempo real.
-"""
-
 import time
 import base64
 from pathlib import Path
@@ -20,8 +7,6 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
-# Algunos entornos con Python 3.13 tienen problemas con pandas; creamos un stub mínimo
-# antes de importar Plotly para evitar errores de importación circular.
 import sys
 import types
 
@@ -49,9 +34,8 @@ _ensure_pandas_stub()
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Capacidad por pod: 1000 rpm equivalen al 60 % de GPU -> al 100 % son ~1666.7 rpm.
+# Capacidad por pod: 1000 rpm equivalen al 60 % de GPU
 CAPACITY_PER_POD = 1000.0 / 0.6
-# Carga que corresponde al 60 % de GPU por pod (valor de referencia)
 LOAD_AT_SP_PER_POD = 1000.0
 LOGO_PATH = Path("resources/utn cuadrado.jpg")
 
@@ -84,7 +68,11 @@ def set_modern_style() -> None:
         }
         body { background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: var(--fg); }
         .block-container { padding-top: 1.2rem; padding-bottom: 0.2rem; }
-        .stMetric { background: rgba(0,0,0,0.04); border-radius: 10px; padding: 6px; border: 1px solid rgba(0,0,0,0.05); color: var(--fg); }
+        .stMetric { background: rgba(0,0,0,0.04); border-radius: 8px; padding: 4px 6px; border: 1px solid rgba(0,0,0,0.05); color: var(--fg); min-height: 80px; }
+        .stMetric > div { gap: 2px; }
+        [data-testid="stMetricLabel"] { font-size: 3.9rem; color: var(--muted); }
+        [data-testid="stMetricValue"] { font-size: 1.8rem; }
+        [data-testid="stMetricDelta"] { font-size: 1.85rem; }
         .stPlotlyChart { padding: 0; background: #ffffff; border-radius: 10px; }
         .element-container { margin-bottom: 0.35rem; }
         h1, h2, h3, h4, h5, h6 { color: var(--fg); }
@@ -377,6 +365,7 @@ def compute_kpis(sim: Dict, sp: float) -> Dict[str, float]:
         "pct_within_band": pct_within,
         "pods_min_allowed": 1,
         "pods_max_allowed": 4,
+        "error_pct": sim["errors"][-1],
     }
 
 
@@ -544,11 +533,11 @@ def render_header() -> None:
 
 def render_metrics(sim: Dict, sp: float) -> None:
     kpis = compute_kpis(sim, sp)
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("GPU final [%]", f"{kpis['gpu_final']:.1f}")
     col2.metric("Pods actuales", f"{kpis['pods_current']:.0f}")
     col3.metric("Pods permitidos", f"{kpis['pods_min_allowed']} - {kpis['pods_max_allowed']}")
-    # Se omite el mensaje de banda para evitar textos de alerta.
+    col4.metric("Error [%]", f"{kpis['error_pct']:.2f}")
 
 
 def render_pod_kpis(sim: Dict) -> None:
@@ -562,10 +551,10 @@ def render_pod_kpis(sim: Dict) -> None:
         cols[idx].metric(
             f"Pod {idx + 1} rpm",
             f"{value:.0f}",
-            help=(
-                f"Atiende ~{value:.0f} rpm. Capacidad máx. por pod: "
-                f"{CAPACITY_PER_POD:.0f} rpm (~60 % a 1000 rpm)."
-            ),
+            #help=(
+            #    f"Atiende ~{value:.0f} rpm. Capacidad máx. por pod: "
+            #    f"{CAPACITY_PER_POD:.0f} rpm (~60 % a 1000 rpm)."
+            #),
         )
 
 
@@ -604,6 +593,7 @@ def plot_error(sim: Dict) -> go.Figure:
         plot_bgcolor="#ffffff",
         height=220,
     )
+    fig.update_yaxes(range=[-40, 40], dtick=20)
     return fig
 
 
@@ -640,7 +630,7 @@ def main() -> None:
     sim = st.session_state.sim
 
     # Layout compacto en tres filas: KPIs arriba, gráficos en medio, cargas/errores abajo.
-    top_left, top_right = st.columns([0.6, 0.4])
+    top_left, top_right = st.columns(2)
     pod_kpi_ph = top_left.container()
     metrics_ph = top_right.container()
     charts_left, charts_right = st.columns(2)
