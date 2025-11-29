@@ -280,30 +280,7 @@ def pd_step(uso_gpu_actual: float, load: float, params: Dict, sim_state: Dict) -
     pods_prev = sim_state["current_pods"]
     new_pods = np.ceil(pods_prev+control)
     limited_new_pods = max(1, min(4, new_pods))
-    """ pods = pods_prev
-    delta_from_control = 0
-    target_pods = int(np.clip(np.ceil(load / LOAD_AT_SP_PER_POD), 1, 4))
-    
-    delta = threshold_delta(control) + threshold_delta_derivative(derivative)
-    
-    delta = int(np.clip(delta, -3, 3))  # permite saltos hasta ±3 pods
-    delta_abs = abs(delta)
 
-    # Solo actuamos si estamos dentro de las bandas de error superiores/inferiores.
-    if band_high_min <= uso_gpu_actual <= band_high_max and control > 0:
-        # Sube pods pero sin pasar del objetivo por carga.
-        faltante = max(0, target_pods - pods_prev)
-        inc = min(delta_abs, faltante) if faltante > 0 else 0
-        pods = int(np.clip(pods_prev + inc, 1, 4))
-        delta_from_control = pods - pods_prev
-    elif band_low_min <= uso_gpu_actual <= band_low_max and control < 0:
-        # Baja pods pero no por debajo de lo que pide la carga.
-        exceso = max(0, pods_prev - target_pods)
-        dec = min(delta_abs, exceso) if exceso > 0 else 0
-        pods = int(np.clip(pods_prev - dec, 1, 4))
-        delta_from_control = pods - pods_prev
-    else:
-        delta_from_control = 0 """
     delta_from_control = abs(limited_new_pods-pods_prev)
     sim_state["last_error"] = error
     sim_state["current_pods"] = limited_new_pods
@@ -461,8 +438,9 @@ def plot_gpu(sim: Dict, sp: float) -> go.Figure:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         transition=dict(duration=400, easing="cubic-in-out"),
+        height=350,
     )
-    fig.update_yaxes(range=[0, 110])
+    fig.update_yaxes(range=[0, 110], dtick=15)
     return fig
 
 
@@ -483,6 +461,7 @@ def plot_pods(sim: Dict) -> go.Figure:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         transition=dict(duration=400, easing="cubic-in-out"),
+        height=350,
     )
     return fig
 
@@ -583,7 +562,7 @@ def plot_error(sim: Dict) -> go.Figure:
         )
     )
     fig.update_layout(
-        title="Evolución del error (SP - %GPU)",
+        title="Señal de Error",
         xaxis_title="Tiempo [min]",
         yaxis_title="Error [%GPU]",
         template=None,
@@ -591,9 +570,9 @@ def plot_error(sim: Dict) -> go.Figure:
         uirevision="error-figure",
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
-        height=220,
+        height=300,
     )
-    fig.update_yaxes(range=[-40, 40], dtick=20)
+    fig.update_yaxes(range=[-50, 50], dtick=15)
     return fig
 
 
@@ -605,13 +584,13 @@ def plot_load(sim: Dict) -> go.Figure:
     )
     fig.update_traces(line=dict(color="#34d399", width=2), name="Carga rpm")
     fig.update_layout(
-        title="Evolución de la carga (rpm)",
+        title="Medición de rpm",
         template=None,
         hovermode="x unified",
         uirevision="load-figure",
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
-        height=220,
+        height=300,
     )
     return fig
 
