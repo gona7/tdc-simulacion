@@ -1,16 +1,3 @@
-"""
-Simulación didáctica en tiempo discreto de un lazo PD para autoescalado de pods GPU.
-
-Se ejecuta con:
-    streamlit run main.py
-o simplemente:
-    python main.py
-
-El código está escrito únicamente con funciones (sin clases) y mantiene el estado en
-`st.session_state` para poder correr la simulación de manera continua, ajustar la carga
-en vivo y ver los gráficos actualizarse en tiempo real.
-"""
-
 import time
 import base64
 from pathlib import Path
@@ -20,12 +7,11 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
-# Algunos entornos con Python 3.13 tienen problemas con pandas; creamos un stub mínimo
-# antes de importar Plotly para evitar errores de importación circular.
 import sys
 import types
 
 
+INITIAL = 1
 def _ensure_pandas_stub():
     try:
         import pandas as pd  # type: ignore
@@ -48,9 +34,8 @@ _ensure_pandas_stub()
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Capacidad por pod: 1000 rpm equivalen al 60 % de GPU -> al 100 % son ~1666.7 rpm.
+# Capacidad por pod: 1000 rpm equivalen al 60 % de GPU
 CAPACITY_PER_POD = 1000.0 / 0.6
-# Carga que corresponde al 60 % de GPU por pod (valor de referencia)
 LOAD_AT_SP_PER_POD = 1000.0
 LOGO_PATH = Path("resources/utn cuadrado.jpg")
 
@@ -82,16 +67,20 @@ def set_modern_style() -> None:
             --panel-border: #2b2b2b;
         }
         body { background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: var(--fg); }
-        .block-container { padding-top: 0.6rem; padding-bottom: 0.3rem; }
-        .stMetric { background: rgba(0,0,0,0.04); border-radius: 12px; padding: 8px; border: 1px solid rgba(0,0,0,0.06); color: var(--fg); }
-        .stPlotlyChart { padding: 0; background: #ffffff; border-radius: 12px; }
-        .element-container { margin-bottom: 0.5rem; }
+        .block-container { padding-top: 1.2rem; padding-bottom: 0.2rem; }
+        .stMetric { background: rgba(0,0,0,0.04); border-radius: 8px; padding: 4px 6px; border: 1px solid rgba(0,0,0,0.05); color: var(--fg); min-height: 80px; }
+        .stMetric > div { gap: 2px; }
+        [data-testid="stMetricLabel"] { font-size: 3.9rem; color: var(--muted); }
+        [data-testid="stMetricValue"] { font-size: 1.8rem; }
+        [data-testid="stMetricDelta"] { font-size: 1.85rem; }
+        .stPlotlyChart { padding: 0; background: #ffffff; border-radius: 10px; }
+        .element-container { margin-bottom: 0.35rem; }
         h1, h2, h3, h4, h5, h6 { color: var(--fg); }
-        .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 0.4rem; }
+        .header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 0.2rem; }
         .header-left { display: flex; flex-direction: column; }
-        .logo-title { font-weight: 800; letter-spacing: 0.04em; color: var(--accent); font-size: 3.2rem; line-height: 1.2; text-align: left; margin-top: 24px; }
+        .logo-title { font-weight: 800; letter-spacing: 0.04em; color: var(--accent); font-size: 2.8rem; line-height: 1.1; text-align: left; margin-top: 12px; margin-bottom: 2px; }
         .logo-sub { color: #8b6a60; font-size: 1rem; }
-        .logo-img { height: 140px; margin-right: 64px; margin-top: 12px; }
+        .logo-img { height: 110px; margin-right: 24px; margin-top: 6px; }
         /* Sidebar en negro */
         section[data-testid="stSidebar"] { background: var(--panel); color: #f1e8e3; overflow: hidden !important; }
         section[data-testid="stSidebar"] .stSlider label, 
@@ -135,8 +124,8 @@ def logo_base64() -> str:
 def sidebar_controls() -> Dict:
     """Dibuja los controles y devuelve sus valores."""
     st.sidebar.subheader("Controlador PD")
-    kp = st.sidebar.slider("Kp (proporcional)", 0.0, 5.0, 1.2, 0.1)
-    kd = st.sidebar.slider("Kd (derivativo)", 0.0, 5.0, 0.6, 0.1)
+    kp = st.sidebar.slider("Kp (proporcional)", 0.0, 3.0, 1.0, 0.1)
+    kd = st.sidebar.slider("Kd (derivativo)", 0.0, 1.0, 0.0, 0.01)
     sp = st.sidebar.slider("Setpoint de GPU [%]", 30.0, 90.0, 60.0, 1.0)
     st.sidebar.subheader("Modelo y simulación")
     dt = 30.0  # fijo en 30 s
@@ -213,7 +202,26 @@ def find_settling_index(time_arr: np.ndarray, gpu_arr: np.ndarray, sp: float) ->
 # Umbrales de control (delta de pods según magnitud del error)
 # ---------------------------------------------------------------------------
 
+if "INITIAL" not in st.session_state:
+    st.session_state.INITIAL = 1
 
+
+def umbrales(error):
+    abs_error = abs(error)
+    print("ABS ERROR: ",abs_error)
+    print("initial: ",st.session_state.INITIAL)
+    if st.session_state.INITIAL == 1: 
+        st.session_state.INITIAL = 0
+        return 0 
+    if abs_error < 15:             # 15% GPU
+        return 0
+    elif 15 <= abs_error < 20:     # 15 - 20% GPU
+        return -1 if error < 0 else 1
+    elif 20 <= abs_error < 25:     # 10 - 25% GPU
+        return -2 if error < 0 else 2
+    else:
+        return -3 if error < 0 else 3
+        
 def threshold_delta(value: float) -> int:
     """
     Devuelve un delta entero de pods según la magnitud del control (variable continua).
@@ -258,39 +266,26 @@ def pd_step(uso_gpu_actual: float, load: float, params: Dict, sim_state: Dict) -
     band_low_max = max(sp - 15, 0)
     band_high_min = min(sp + 15, 100)
     band_high_max = min(sp + 25, 100)
-
+    print("GPU ACT ES: ",uso_gpu_actual)
+    print("setpoint es: ",sp)
     error = uso_gpu_actual - sp  # si GPU > SP, el control tiende a agregar pods
+    print("ERROR ES: ",error)
     derivative = (error - sim_state["last_error"]) / params["dt"]
-    control = params["kp"] * error + params["kd"] * derivative
+    umbral_error = umbrales(error)
+    control = params["kp"] * umbral_error + params["kd"] * derivative
+    print("KP ES: ", params["kp"])
+    print("umbral es: ", umbral_error)
+    print("EL CONTROL ES: ",control)
 
     pods_prev = sim_state["current_pods"]
-    pods = pods_prev
-    delta_from_control = 0
-    target_pods = int(np.clip(np.ceil(load / LOAD_AT_SP_PER_POD), 1, 4))
-    delta = threshold_delta(control) + threshold_delta_derivative(derivative)
-    delta = int(np.clip(delta, -3, 3))  # permite saltos hasta ±3 pods
-    delta_abs = abs(delta)
+    new_pods = np.ceil(pods_prev+control)
+    limited_new_pods = max(1, min(4, new_pods))
 
-    # Solo actuamos si estamos dentro de las bandas de error superiores/inferiores.
-    if band_high_min <= uso_gpu_actual <= band_high_max and control > 0:
-        # Sube pods pero sin pasar del objetivo por carga.
-        faltante = max(0, target_pods - pods_prev)
-        inc = min(delta_abs, faltante) if faltante > 0 else 0
-        pods = int(np.clip(pods_prev + inc, 1, 4))
-        delta_from_control = pods - pods_prev
-    elif band_low_min <= uso_gpu_actual <= band_low_max and control < 0:
-        # Baja pods pero no por debajo de lo que pide la carga.
-        exceso = max(0, pods_prev - target_pods)
-        dec = min(delta_abs, exceso) if exceso > 0 else 0
-        pods = int(np.clip(pods_prev - dec, 1, 4))
-        delta_from_control = pods - pods_prev
-    else:
-        delta_from_control = 0
-
+    delta_from_control = abs(limited_new_pods-pods_prev)
     sim_state["last_error"] = error
-    sim_state["current_pods"] = pods
+    sim_state["current_pods"] = limited_new_pods
     return {
-        "pods": pods,
+        "pods": limited_new_pods,
         "error": error,
         "control": control,
         "derivative": derivative,
@@ -347,6 +342,7 @@ def compute_kpis(sim: Dict, sp: float) -> Dict[str, float]:
         "pct_within_band": pct_within,
         "pods_min_allowed": 1,
         "pods_max_allowed": 4,
+        "error_pct": sim["errors"][-1],
     }
 
 
@@ -442,8 +438,9 @@ def plot_gpu(sim: Dict, sp: float) -> go.Figure:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         transition=dict(duration=400, easing="cubic-in-out"),
+        height=350,
     )
-    fig.update_yaxes(range=[0, 110])
+    fig.update_yaxes(range=[0, 110], dtick=15)
     return fig
 
 
@@ -464,6 +461,7 @@ def plot_pods(sim: Dict) -> go.Figure:
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         transition=dict(duration=400, easing="cubic-in-out"),
+        height=350,
     )
     return fig
 
@@ -514,11 +512,11 @@ def render_header() -> None:
 
 def render_metrics(sim: Dict, sp: float) -> None:
     kpis = compute_kpis(sim, sp)
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("GPU final [%]", f"{kpis['gpu_final']:.1f}")
     col2.metric("Pods actuales", f"{kpis['pods_current']:.0f}")
     col3.metric("Pods permitidos", f"{kpis['pods_min_allowed']} - {kpis['pods_max_allowed']}")
-    # Se omite el mensaje de banda para evitar textos de alerta.
+    col4.metric("Error [%]", f"{kpis['error_pct']:.2f}")
 
 
 def render_pod_kpis(sim: Dict) -> None:
@@ -532,10 +530,10 @@ def render_pod_kpis(sim: Dict) -> None:
         cols[idx].metric(
             f"Pod {idx + 1} rpm",
             f"{value:.0f}",
-            help=(
-                f"Atiende ~{value:.0f} rpm. Capacidad máx. por pod: "
-                f"{CAPACITY_PER_POD:.0f} rpm (~60 % a 1000 rpm)."
-            ),
+            #help=(
+            #    f"Atiende ~{value:.0f} rpm. Capacidad máx. por pod: "
+            #    f"{CAPACITY_PER_POD:.0f} rpm (~60 % a 1000 rpm)."
+            #),
         )
 
 
@@ -545,10 +543,56 @@ def render_control_kpis(sim: Dict) -> None:
     deriv = sim["derivatives"][-1]
     control = sim["controls"][-1]
     delta = sim["delta_controls"][-1]
-    cols = st.columns(3)
-    cols[0].metric("Error [%GPU]", f"{err:.2f}")
-    cols[1].metric("Derivativo", f"{deriv:.2f}")
-    cols[2].metric("Control (PD)", f"{control:.2f}")
+    # cols = st.columns(3)
+    # cols[0].metric("Error [%GPU]", f"{err:.2f}")
+    # cols[1].metric("Derivativo", f"{deriv:.2f}")
+    # cols[2].metric("Control (PD)", f"{control:.2f}")
+
+
+def plot_error(sim: Dict) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=sim["time_min"],
+            y=sim["errors"],
+            mode="lines+markers",
+            name="Error",
+            line=dict(color="#c30032", width=2),
+            marker=dict(size=4),
+        )
+    )
+    fig.update_layout(
+        title="Señal de Error",
+        xaxis_title="Tiempo [min]",
+        yaxis_title="Error [%GPU]",
+        template=None,
+        hovermode="x unified",
+        uirevision="error-figure",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        height=300,
+    )
+    fig.update_yaxes(range=[-50, 50], dtick=15)
+    return fig
+
+
+def plot_load(sim: Dict) -> go.Figure:
+    fig = px.line(
+        x=sim["time_min"],
+        y=sim["loads"],
+        labels={"x": "Tiempo [min]", "y": "Requests/min"},
+    )
+    fig.update_traces(line=dict(color="#34d399", width=2), name="Carga rpm")
+    fig.update_layout(
+        title="Medición de rpm",
+        template=None,
+        hovermode="x unified",
+        uirevision="load-figure",
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        height=300,
+    )
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -564,14 +608,14 @@ def main() -> None:
 
     sim = st.session_state.sim
 
-    # Layout compacto en dos filas: KPIs arriba, gráficos debajo.
-    top_left, top_right = st.columns([0.55, 0.45])
+    # Layout compacto en tres filas: KPIs arriba, gráficos en medio, cargas/errores abajo.
+    top_left, top_right = st.columns(2)
     pod_kpi_ph = top_left.container()
-    ctrl_kpi_ph = top_left.container()
     metrics_ph = top_right.container()
     charts_left, charts_right = st.columns(2)
     gpu_ph = charts_left.container()
     pods_ph = charts_right.container()
+    bottom_left, bottom_right = st.columns([0.5, 0.5])
 
     # Controles de ejecución en vivo (intervalo fijo de 0.6 segundos)
     st.sidebar.subheader("Ejecución en vivo")
@@ -584,8 +628,6 @@ def main() -> None:
     def render_all() -> None:
         with pod_kpi_ph:
             render_pod_kpis(sim)
-        with ctrl_kpi_ph:
-            render_control_kpis(sim)
         with metrics_ph:
             render_metrics(sim, params["sp"])
         with gpu_ph:
@@ -602,6 +644,21 @@ def main() -> None:
                 key="pods_chart",
                 config={"displayModeBar": False, "staticPlot": False},
             )
+        with bottom_left:
+            st.plotly_chart(
+                plot_load(sim),
+                use_container_width=True,
+                key="load_chart",
+                config={"displayModeBar": False, "staticPlot": False},
+            )
+        with bottom_right:
+            st.plotly_chart(
+                plot_error(sim),
+                use_container_width=True,
+                key="error_chart",
+                config={"displayModeBar": False, "staticPlot": False},
+            )
+            render_control_kpis(sim)
 
     if reset:
         reset_simulation(params)
