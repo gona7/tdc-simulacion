@@ -270,9 +270,11 @@ def pd_step(uso_gpu_actual: float, load: float, params: Dict, sim_state: Dict) -
     print("setpoint es: ",sp)
     error = uso_gpu_actual - sp  # si GPU > SP, el control tiende a agregar pods
     print("ERROR ES: ",error)
+    print("Last Error ES: ", sim_state["last_error"])
     derivative = (error - sim_state["last_error"]) / params["dt"]
+    print("Derivative ES: ", derivative)
     umbral_error = umbrales(error)
-    control = params["kp"] * umbral_error + params["kd"] * derivative
+    control = params["kp"] * umbral_error + round(params["kd"] * derivative,3)
     print("KP ES: ", params["kp"])
     print("umbral es: ", umbral_error)
     print("EL CONTROL ES: ",control)
